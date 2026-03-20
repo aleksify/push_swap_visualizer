@@ -15,7 +15,6 @@ library Tkinter GUI.
 ## Run
 
 ```bash
-cd /home/leonmarq/Projects/42_network_2026/push_swap/test/visualizer
 python3 visualizer.py
 ```
 
