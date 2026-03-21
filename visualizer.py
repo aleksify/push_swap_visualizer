@@ -12,6 +12,7 @@ from tkinter import (
     BOTH,
     END,
     LEFT,
+    RIDGE,
     RIGHT,
     TOP,
     Button,
@@ -19,6 +20,7 @@ from tkinter import (
     Entry,
     Frame,
     Label,
+    Radiobutton,
     Scale,
     StringVar,
     Text,
@@ -32,6 +34,12 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_PUSH_SWAP = (SCRIPT_DIR.parent / "push_swap").resolve()
 DEFAULT_CHECKER = (SCRIPT_DIR.parent / "checker_linux").resolve()
 VALID_OPS = {"sa", "sb", "ss", "pa", "pb", "ra", "rb", "rr", "rra", "rrb", "rrr"}
+STRATEGIES = [
+    ("Adaptive", "--adaptive", "Default disorder-based selection"),
+    ("Simple", "--simple", "Force O(n2)"),
+    ("Medium", "--medium", "Force O(nsqrt(n))"),
+    ("Complex", "--complex", "Force O(n log n)"),
+]
 BG_APP = "#f2f4f8"
 BG_PANEL = "#ffffff"
 BG_DARK = "#101820"
@@ -122,6 +130,7 @@ class PushSwapVisualizer:
         self.push_swap_var = StringVar(value=str(DEFAULT_PUSH_SWAP))
         self.checker_var = StringVar(value=str(DEFAULT_CHECKER))
         self.values_var = StringVar(value="2 1 3")
+        self.strategy_var = StringVar(value="--adaptive")
         self.status_var = StringVar(value="Ready.")
         self.info_var = StringVar(value="No run loaded.")
         self.speed_var = StringVar(value="20.0")
@@ -191,6 +200,41 @@ class PushSwapVisualizer:
         Entry(paths, textvariable=self.values_var, width=72, relief="flat", bg="#f8fafc", fg=FG_TEXT).grid(
             row=4, column=0, columnspan=2, sticky="we", pady=4, ipady=8
         )
+
+        Label(paths, text="Strategy Selector", bg=BG_PANEL, fg=FG_TEXT, font=("Helvetica", 14, "bold")).grid(
+            row=5, column=0, columnspan=2, sticky="w", pady=(14, 10)
+        )
+        strategy_frame = Frame(paths, bg=BG_PANEL)
+        strategy_frame.grid(row=6, column=0, columnspan=2, sticky="we")
+        for idx, (label, flag, hint) in enumerate(STRATEGIES):
+            strategy_card = Frame(
+                strategy_frame,
+                bg="#f8fafc",
+                padx=8,
+                pady=8,
+                highlightbackground="#d8dee8",
+                highlightthickness=1,
+                relief=RIDGE,
+                bd=0,
+            )
+            strategy_card.grid(row=0, column=idx, sticky="nsew", padx=(0, 8 if idx < len(STRATEGIES) - 1 else 0))
+            Radiobutton(
+                strategy_card,
+                text=label,
+                variable=self.strategy_var,
+                value=flag,
+                bg="#f8fafc",
+                fg=FG_TEXT,
+                selectcolor="#e1f0f4",
+                activebackground="#f8fafc",
+                activeforeground=FG_TEXT,
+                highlightthickness=0,
+                anchor="w",
+                font=("Helvetica", 11, "bold"),
+            ).pack(anchor="w")
+            Label(strategy_card, text=flag, bg="#f8fafc", fg=BG_ACCENT, font=("Courier", 10, "bold")).pack(anchor="w")
+            Label(strategy_card, text=hint, bg="#f8fafc", fg=FG_MUTED, font=("Helvetica", 9)).pack(anchor="w")
+            strategy_frame.grid_columnconfigure(idx, weight=1)
         paths.grid_columnconfigure(1, weight=1)
 
         Label(actions, text="Quick Actions", bg=BG_PANEL, fg=FG_TEXT, font=("Helvetica", 14, "bold")).grid(
@@ -406,12 +450,13 @@ class PushSwapVisualizer:
             messagebox.showerror("Invalid values", str(exc))
             return
 
-        args = [str(push_swap), *[str(v) for v in values]]
+        strategy_flag = self.strategy_var.get() or "--adaptive"
+        args = [str(push_swap), strategy_flag, *[str(v) for v in values]]
         result = subprocess.run(args, capture_output=True, text=True, check=False)
         if result.stderr:
             self.status_var.set(result.stderr.strip())
         else:
-            self.status_var.set("push_swap executed.")
+            self.status_var.set(f"push_swap executed with {strategy_flag}.")
 
         ops = [line.strip() for line in result.stdout.splitlines() if line.strip()]
         invalid = [op for op in ops if op not in VALID_OPS]
@@ -442,7 +487,7 @@ class PushSwapVisualizer:
         self.current_index = 0
         self._refresh_ops_text()
         self._render_current_state()
-        self.info_var.set(f"ops: {len(ops)} | checker: {check_text}")
+        self.info_var.set(f"strategy: {strategy_flag} | ops: {len(ops)} | checker: {check_text}")
 
     def _build_snapshots(self, values: list[int], ops: list[str]) -> list[Snapshot]:
         a = list(values)
