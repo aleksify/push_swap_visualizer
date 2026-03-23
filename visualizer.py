@@ -15,7 +15,9 @@ from tkinter import (
     RIDGE,
     RIGHT,
     TOP,
+    BooleanVar,
     Button,
+    Checkbutton,
     Canvas,
     Entry,
     Frame,
@@ -34,8 +36,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_PUSH_SWAP = (SCRIPT_DIR.parent / "push_swap").resolve()
 DEFAULT_CHECKER = (SCRIPT_DIR.parent / "checker_linux").resolve()
 VALID_OPS = {"sa", "sb", "ss", "pa", "pb", "ra", "rb", "rr", "rra", "rrb", "rrr"}
+NO_STRATEGY = "__none__"
 STRATEGIES = [
-    ("None", "", "Run without a strategy flag"),
+    ("None", NO_STRATEGY, "Run without a strategy flag"),
     ("Adaptive", "--adaptive", "Default disorder-based selection"),
     ("Simple", "--simple", "Force O(n2)"),
     ("Medium", "--medium", "Force O(nsqrt(n))"),
@@ -131,7 +134,8 @@ class PushSwapVisualizer:
         self.push_swap_var = StringVar(value=str(DEFAULT_PUSH_SWAP))
         self.checker_var = StringVar(value=str(DEFAULT_CHECKER))
         self.values_var = StringVar(value="2 1 3")
-        self.strategy_var = StringVar(value="")
+        self.strategy_var = StringVar(value=NO_STRATEGY)
+        self.bench_var = BooleanVar(value=False)
         self.status_var = StringVar(value="Ready.")
         self.info_var = StringVar(value="No run loaded.")
         self.speed_var = StringVar(value="20.0")
@@ -233,9 +237,30 @@ class PushSwapVisualizer:
                 anchor="w",
                 font=("Helvetica", 11, "bold"),
             ).pack(anchor="w")
-            Label(strategy_card, text=flag, bg="#f8fafc", fg=BG_ACCENT, font=("Courier", 10, "bold")).pack(anchor="w")
+            flag_label = flag if flag != NO_STRATEGY else "(no flag)"
+            Label(
+                strategy_card,
+                text=flag_label,
+                bg="#f8fafc",
+                fg=BG_ACCENT,
+                font=("Courier", 10, "bold"),
+            ).pack(anchor="w")
             Label(strategy_card, text=hint, bg="#f8fafc", fg=FG_MUTED, font=("Helvetica", 9)).pack(anchor="w")
             strategy_frame.grid_columnconfigure(idx, weight=1)
+        Checkbutton(
+            paths,
+            text="Enable --bench",
+            variable=self.bench_var,
+            onvalue=True,
+            offvalue=False,
+            bg=BG_PANEL,
+            fg=FG_TEXT,
+            activebackground=BG_PANEL,
+            activeforeground=FG_TEXT,
+            selectcolor="#e1f0f4",
+            highlightthickness=0,
+            font=("Helvetica", 11, "bold"),
+        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(12, 0))
         paths.grid_columnconfigure(1, weight=1)
 
         Label(actions, text="Quick Actions", bg=BG_PANEL, fg=FG_TEXT, font=("Helvetica", 14, "bold")).grid(
@@ -451,17 +476,23 @@ class PushSwapVisualizer:
             messagebox.showerror("Invalid values", str(exc))
             return
 
-        strategy_flag = self.strategy_var.get().strip()
+        selected_strategy = self.strategy_var.get().strip()
+        strategy_flag = ""
+        if selected_strategy and selected_strategy != NO_STRATEGY:
+            strategy_flag = selected_strategy
         args = [str(push_swap)]
         if strategy_flag:
             args.append(strategy_flag)
+        if self.bench_var.get():
+            args.append("--bench")
         args.extend(str(v) for v in values)
         result = subprocess.run(args, capture_output=True, text=True, check=False)
-        if result.stderr:
+        if result.returncode != 0 and result.stderr:
             self.status_var.set(result.stderr.strip())
         else:
             strategy_label = strategy_flag or "no strategy flag"
-            self.status_var.set(f"push_swap executed with {strategy_label}.")
+            bench_label = " with --bench" if self.bench_var.get() else ""
+            self.status_var.set(f"push_swap executed with {strategy_label}{bench_label}.")
 
         ops = [line.strip() for line in result.stdout.splitlines() if line.strip()]
         invalid = [op for op in ops if op not in VALID_OPS]
@@ -493,7 +524,10 @@ class PushSwapVisualizer:
         self._refresh_ops_text()
         self._render_current_state()
         strategy_label = strategy_flag or "none"
-        self.info_var.set(f"strategy: {strategy_label} | ops: {len(ops)} | checker: {check_text}")
+        bench_text = "on" if self.bench_var.get() else "off"
+        self.info_var.set(
+            f"strategy: {strategy_label} | bench: {bench_text} | ops: {len(ops)} | checker: {check_text}"
+        )
 
     def _build_snapshots(self, values: list[int], ops: list[str]) -> list[Snapshot]:
         a = list(values)
