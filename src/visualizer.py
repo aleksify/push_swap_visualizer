@@ -35,6 +35,7 @@ from tkinter import messagebox
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_PUSH_SWAP = (SCRIPT_DIR.parent.parent / "push_swap").resolve()
 DEFAULT_CHECKER = (SCRIPT_DIR / "checker_linux").resolve()
+PROJECT_ROOT = SCRIPT_DIR.parent.parent.resolve()
 VALID_OPS = {"sa", "sb", "ss", "pa", "pb", "ra", "rb", "rr", "rra", "rrb", "rrr"}
 NO_STRATEGY = "__none__"
 STRATEGIES = [
@@ -319,6 +320,18 @@ class PushSwapVisualizer:
         )
         Button(
             actions,
+            text="make re",
+            command=self.rebuild_push_swap,
+            bg="#e76f51",
+            fg=FG_LIGHT,
+            activebackground="#d65f43",
+            activeforeground=FG_LIGHT,
+            relief="flat",
+            padx=14,
+            pady=8,
+        ).grid(row=2, column=1, padx=4, pady=8, sticky="we")
+        Button(
+            actions,
             text="Run push_swap",
             command=self.run_push_swap,
             bg="#ffb703",
@@ -328,7 +341,7 @@ class PushSwapVisualizer:
             relief="flat",
             padx=14,
             pady=8,
-        ).grid(row=2, column=1, columnspan=2, padx=4, pady=8, sticky="we")
+        ).grid(row=2, column=2, padx=4, pady=8, sticky="we")
 
         Label(actions, text="Playback", bg=BG_PANEL, fg=FG_TEXT, font=("Helvetica", 14, "bold")).grid(
             row=3, column=0, columnspan=3, sticky="w", pady=(10, 10)
@@ -460,6 +473,27 @@ class PushSwapVisualizer:
         random.shuffle(values)
         self.values_var.set(" ".join(str(v) for v in values))
         self.status_var.set("Shuffled current values.")
+
+    def rebuild_push_swap(self) -> None:
+        self.stop_playback()
+        self.status_var.set("Running make re...")
+        self.root.update_idletasks()
+        result = subprocess.run(
+            ["make", "re"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            self.status_var.set("make re completed successfully.")
+            return
+
+        error_text = (result.stderr or result.stdout).strip()
+        if not error_text:
+            error_text = "make re failed with no output."
+        self.status_var.set("make re failed.")
+        messagebox.showerror("Build failed", error_text)
 
     def run_push_swap(self) -> None:
         self.stop_playback()
