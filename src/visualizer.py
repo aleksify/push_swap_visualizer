@@ -33,8 +33,8 @@ from tkinter import messagebox
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_PUSH_SWAP = (SCRIPT_DIR.parent / "push_swap").resolve()
-DEFAULT_CHECKER = (SCRIPT_DIR.parent / "checker_linux").resolve()
+DEFAULT_PUSH_SWAP = (SCRIPT_DIR.parent.parent / "push_swap").resolve()
+DEFAULT_CHECKER = (SCRIPT_DIR / "checker_linux").resolve()
 VALID_OPS = {"sa", "sb", "ss", "pa", "pb", "ra", "rb", "rr", "rra", "rrb", "rrr"}
 NO_STRATEGY = "__none__"
 STRATEGIES = [

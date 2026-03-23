@@ -16,13 +16,19 @@ library Tkinter GUI.
 ## Run
 
 ```bash
-python3 visualizer.py
+./push_swap-visualizer
+```
+
+You can still run it directly with:
+
+```bash
+python3 src/visualizer.py
 ```
 
 Default paths:
 
 - `push_swap`: `../push_swap`
-- `checker_linux`: `checker_linux`
+- `checker_linux`: `src/checker_linux`
 
 You can change both paths in the UI.
 
