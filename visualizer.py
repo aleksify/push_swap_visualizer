@@ -35,6 +35,7 @@ DEFAULT_PUSH_SWAP = (SCRIPT_DIR.parent / "push_swap").resolve()
 DEFAULT_CHECKER = (SCRIPT_DIR.parent / "checker_linux").resolve()
 VALID_OPS = {"sa", "sb", "ss", "pa", "pb", "ra", "rb", "rr", "rra", "rrb", "rrr"}
 STRATEGIES = [
+    ("None", "", "Run without a strategy flag"),
     ("Adaptive", "--adaptive", "Default disorder-based selection"),
     ("Simple", "--simple", "Force O(n2)"),
     ("Medium", "--medium", "Force O(nsqrt(n))"),
@@ -130,7 +131,7 @@ class PushSwapVisualizer:
         self.push_swap_var = StringVar(value=str(DEFAULT_PUSH_SWAP))
         self.checker_var = StringVar(value=str(DEFAULT_CHECKER))
         self.values_var = StringVar(value="2 1 3")
-        self.strategy_var = StringVar(value="--adaptive")
+        self.strategy_var = StringVar(value="")
         self.status_var = StringVar(value="Ready.")
         self.info_var = StringVar(value="No run loaded.")
         self.speed_var = StringVar(value="20.0")
@@ -450,13 +451,17 @@ class PushSwapVisualizer:
             messagebox.showerror("Invalid values", str(exc))
             return
 
-        strategy_flag = self.strategy_var.get() or "--adaptive"
-        args = [str(push_swap), strategy_flag, *[str(v) for v in values]]
+        strategy_flag = self.strategy_var.get().strip()
+        args = [str(push_swap)]
+        if strategy_flag:
+            args.append(strategy_flag)
+        args.extend(str(v) for v in values)
         result = subprocess.run(args, capture_output=True, text=True, check=False)
         if result.stderr:
             self.status_var.set(result.stderr.strip())
         else:
-            self.status_var.set(f"push_swap executed with {strategy_flag}.")
+            strategy_label = strategy_flag or "no strategy flag"
+            self.status_var.set(f"push_swap executed with {strategy_label}.")
 
         ops = [line.strip() for line in result.stdout.splitlines() if line.strip()]
         invalid = [op for op in ops if op not in VALID_OPS]
@@ -487,7 +492,8 @@ class PushSwapVisualizer:
         self.current_index = 0
         self._refresh_ops_text()
         self._render_current_state()
-        self.info_var.set(f"strategy: {strategy_flag} | ops: {len(ops)} | checker: {check_text}")
+        strategy_label = strategy_flag or "none"
+        self.info_var.set(f"strategy: {strategy_label} | ops: {len(ops)} | checker: {check_text}")
 
     def _build_snapshots(self, values: list[int], ops: list[str]) -> list[Snapshot]:
         a = list(values)

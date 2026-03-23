@@ -7,6 +7,7 @@ library Tkinter GUI.
 
 - Runs your local `push_swap` binary directly
 - Generates random unique values for 20, 100, or 500 numbers
+- Lets you run with a selected strategy flag or with no strategy flag at all
 - Steps forward and backward through the operation list
 - Plays the full run with adjustable delay
 - Draws stack `a` and stack `b` side by side
@@ -21,7 +22,7 @@ python3 visualizer.py
 Default paths:
 
 - `push_swap`: `../push_swap`
-- `checker_linux`: `../checker_linux`
+- `checker_linux`: `checker_linux`
 
 You can change both paths in the UI.
 
