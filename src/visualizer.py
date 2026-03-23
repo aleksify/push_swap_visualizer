@@ -22,6 +22,7 @@ from tkinter import (
     Entry,
     Frame,
     Label,
+    OptionMenu,
     Radiobutton,
     Scale,
     StringVar,
@@ -55,6 +56,19 @@ FG_MUTED = "#526071"
 FG_LIGHT = "#f8f9fb"
 MIN_TILE_CHAR_WIDTH = 10
 APPROX_CHAR_WIDTH_PX = 9
+DEFAULT_GRADIENT_START = "#2ec4b6"
+DEFAULT_GRADIENT_END = "#ff6b6b"
+GRADIENT_PRESETS: dict[str, tuple[str, str]] = {
+    "Custom": (DEFAULT_GRADIENT_START, DEFAULT_GRADIENT_END),
+    "Turquoise -> Coral": ("#2ec4b6", "#ff6b6b"),
+    "Ocean": ("#00b4d8", "#03045e"),
+    "Sunset": ("#ffd166", "#ef476f"),
+    "Fire": ("#ffe066", "#d00000"),
+    "Forest": ("#b7e4c7", "#1b4332"),
+    "Ice": ("#caf0f8", "#0077b6"),
+    "Lavender": ("#cdb4db", "#6d597a"),
+    "Mono": ("#e9ecef", "#212529"),
+}
 
 
 @dataclass
@@ -124,6 +138,38 @@ def apply_op(a: list[int], b: list[int], op: str) -> None:
         raise ValueError(f"Unknown operation: {op}")
 
 
+def normalize_hex_color(raw: str) -> str:
+    value = raw.strip()
+    if not value:
+        raise ValueError("Gradient colors cannot be empty.")
+    if not value.startswith("#"):
+        value = f"#{value}"
+    if len(value) != 7 or any(ch not in "0123456789abcdefABCDEF" for ch in value[1:]):
+        raise ValueError(f"Invalid hex color: {raw}")
+    return value.lower()
+
+
+def hex_to_rgb(value: str) -> tuple[int, int, int]:
+    value = normalize_hex_color(value)
+    return tuple(int(value[idx:idx + 2], 16) for idx in (1, 3, 5))
+
+
+def rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    red, green, blue = rgb
+    return f"#{red:02x}{green:02x}{blue:02x}"
+
+
+def interpolate_color(start: str, end: str, ratio: float) -> str:
+    clamped_ratio = max(0.0, min(1.0, ratio))
+    start_rgb = hex_to_rgb(start)
+    end_rgb = hex_to_rgb(end)
+    mixed = tuple(
+        round(start_channel + ((end_channel - start_channel) * clamped_ratio))
+        for start_channel, end_channel in zip(start_rgb, end_rgb)
+    )
+    return rgb_to_hex(mixed)
+
+
 class PushSwapVisualizer:
     def __init__(self, root: Tk) -> None:
         self.root = root
@@ -140,12 +186,18 @@ class PushSwapVisualizer:
         self.status_var = StringVar(value="Ready.")
         self.info_var = StringVar(value="No run loaded.")
         self.speed_var = StringVar(value="20.0")
+        self.gradient_preset_var = StringVar(value="Custom")
+        self.gradient_start_var = StringVar(value=DEFAULT_GRADIENT_START)
+        self.gradient_end_var = StringVar(value=DEFAULT_GRADIENT_END)
+        self.gradient_start = DEFAULT_GRADIENT_START
+        self.gradient_end = DEFAULT_GRADIENT_END
 
         self.snapshots: list[Snapshot] = []
         self.ops: list[str] = []
         self.current_index = 0
         self.play_job: str | None = None
         self.value_ranks: dict[int, int] = {}
+        self.sorted_values: list[int] = []
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
@@ -262,6 +314,79 @@ class PushSwapVisualizer:
             highlightthickness=0,
             font=("Helvetica", 11, "bold"),
         ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        Label(paths, text="Gradient", bg=BG_PANEL, fg=FG_TEXT, font=("Helvetica", 14, "bold")).grid(
+            row=8, column=0, columnspan=2, sticky="w", pady=(14, 10)
+        )
+        gradient_frame = Frame(paths, bg=BG_PANEL)
+        gradient_frame.grid(row=9, column=0, columnspan=2, sticky="we")
+        Label(gradient_frame, text="Preset", bg=BG_PANEL, fg=FG_MUTED, font=("Helvetica", 10, "bold")).grid(
+            row=0, column=0, sticky="w", padx=(0, 8)
+        )
+        preset_menu = OptionMenu(gradient_frame, self.gradient_preset_var, *GRADIENT_PRESETS.keys())
+        preset_menu.configure(
+            width=18,
+            relief="flat",
+            bg="#f8fafc",
+            fg=FG_TEXT,
+            activebackground="#e1f0f4",
+            activeforeground=FG_TEXT,
+            highlightthickness=0,
+        )
+        preset_menu["menu"].configure(bg="#f8fafc", fg=FG_TEXT, activebackground="#e1f0f4")
+        preset_menu.grid(row=0, column=1, sticky="w")
+        Button(
+            gradient_frame,
+            text="Use Preset",
+            command=self.use_gradient_preset,
+            bg=BG_ACCENT,
+            fg=FG_LIGHT,
+            activebackground="#16697a",
+            activeforeground=FG_LIGHT,
+            relief="flat",
+            padx=12,
+            pady=5,
+        ).grid(row=0, column=2, sticky="w", padx=(12, 0))
+        Label(gradient_frame, text="Low", bg=BG_PANEL, fg=FG_MUTED, font=("Helvetica", 10, "bold")).grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=(10, 0)
+        )
+        Entry(
+            gradient_frame,
+            textvariable=self.gradient_start_var,
+            width=14,
+            relief="flat",
+            bg="#f8fafc",
+            fg=FG_TEXT,
+        ).grid(row=1, column=1, sticky="w", ipady=6, pady=(10, 0))
+        Label(gradient_frame, text="High", bg=BG_PANEL, fg=FG_MUTED, font=("Helvetica", 10, "bold")).grid(
+            row=1, column=2, sticky="w", padx=(16, 8), pady=(10, 0)
+        )
+        Entry(
+            gradient_frame,
+            textvariable=self.gradient_end_var,
+            width=14,
+            relief="flat",
+            bg="#f8fafc",
+            fg=FG_TEXT,
+        ).grid(row=1, column=3, sticky="w", ipady=6, pady=(10, 0))
+        Button(
+            gradient_frame,
+            text="Apply",
+            command=self.apply_gradient,
+            bg=BG_ACCENT_ALT,
+            fg=FG_LIGHT,
+            activebackground="#20897e",
+            activeforeground=FG_LIGHT,
+            relief="flat",
+            padx=12,
+            pady=5,
+        ).grid(row=1, column=4, sticky="w", padx=(16, 0), pady=(10, 0))
+        Label(
+            gradient_frame,
+            text="Pick a preset or enter custom hex colors from lowest value to highest value.",
+            bg=BG_PANEL,
+            fg=FG_MUTED,
+            font=("Helvetica", 9),
+        ).grid(row=2, column=0, columnspan=5, sticky="w", pady=(6, 0))
         paths.grid_columnconfigure(1, weight=1)
 
         Label(actions, text="Quick Actions", bg=BG_PANEL, fg=FG_TEXT, font=("Helvetica", 14, "bold")).grid(
@@ -474,6 +599,34 @@ class PushSwapVisualizer:
         self.values_var.set(" ".join(str(v) for v in values))
         self.status_var.set("Shuffled current values.")
 
+    def use_gradient_preset(self) -> None:
+        preset_name = self.gradient_preset_var.get()
+        if preset_name == "Custom":
+            self.status_var.set("Custom gradient selected. Enter hex values below.")
+            return
+        gradient_start, gradient_end = GRADIENT_PRESETS[preset_name]
+        self.gradient_start_var.set(gradient_start)
+        self.gradient_end_var.set(gradient_end)
+        self.apply_gradient()
+
+    def apply_gradient(self) -> bool:
+        try:
+            gradient_start = normalize_hex_color(self.gradient_start_var.get())
+            gradient_end = normalize_hex_color(self.gradient_end_var.get())
+        except ValueError as exc:
+            messagebox.showerror("Invalid gradient color", str(exc))
+            return False
+        self.gradient_start = gradient_start
+        self.gradient_end = gradient_end
+        self.gradient_start_var.set(gradient_start)
+        self.gradient_end_var.set(gradient_end)
+        if self.snapshots:
+            self._render_current_state()
+            self.status_var.set("Updated gradient colors.")
+        else:
+            self.status_var.set("Gradient saved for the next run.")
+        return True
+
     def rebuild_push_swap(self) -> None:
         self.stop_playback()
         self.status_var.set("Running make re...")
@@ -508,6 +661,8 @@ class PushSwapVisualizer:
             values = parse_values(self.values_var.get())
         except ValueError as exc:
             messagebox.showerror("Invalid values", str(exc))
+            return
+        if not self.apply_gradient():
             return
 
         selected_strategy = self.strategy_var.get().strip()
@@ -553,7 +708,8 @@ class PushSwapVisualizer:
 
         self.ops = ops
         self.snapshots = snapshots
-        self.value_ranks = {value: idx for idx, value in enumerate(sorted(values))}
+        self.sorted_values = sorted(values)
+        self.value_ranks = {value: idx for idx, value in enumerate(self.sorted_values)}
         self.current_index = 0
         self._refresh_ops_text()
         self._render_current_state()
@@ -612,8 +768,8 @@ class PushSwapVisualizer:
             font=("Helvetica", 16, "bold"),
         )
 
-        self._draw_stack(snap.a, 0, col_width, top_pad, row_height, max_rank, "#2ec4b6")
-        self._draw_stack(snap.b, col_width, col_width, top_pad, row_height, max_rank, "#ff6b6b")
+        self._draw_stack(snap.a, 0, col_width, top_pad, row_height, max_rank)
+        self._draw_stack(snap.b, col_width, col_width, top_pad, row_height, max_rank)
 
     def _draw_stack(
         self,
@@ -623,7 +779,6 @@ class PushSwapVisualizer:
         top_pad: int,
         row_height: float,
         max_rank: int,
-        color: str,
     ) -> None:
         center_x = x_offset + col_width / 2
         stack_left = x_offset + 20
@@ -645,12 +800,17 @@ class PushSwapVisualizer:
             width_span = max_bar_half - min_bar_half
             rank_ratio = rank / max_rank if max_rank else 0.0
             bar_half = min_bar_half + (rank_ratio * width_span)
+            bar_color = interpolate_color(
+                self.gradient_start,
+                self.gradient_end,
+                rank_ratio,
+            )
             self.canvas.create_rectangle(
                 center_x - bar_half,
                 y0,
                 center_x + bar_half,
                 y1,
-                fill=color,
+                fill=bar_color,
                 outline="",
             )
             self.canvas.create_text(
