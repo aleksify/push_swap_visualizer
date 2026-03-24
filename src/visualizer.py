@@ -6,6 +6,7 @@ import random
 import signal
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from tkinter import (
@@ -63,6 +64,8 @@ MIN_TILE_CHAR_WIDTH = 10
 APPROX_CHAR_WIDTH_PX = 9
 DEFAULT_GRADIENT_START = "#2ec4b6"
 DEFAULT_GRADIENT_END = "#ff6b6b"
+PUSH_SWAP_TIMEOUT_SECONDS = 3.0
+CHECKER_TIMEOUT_SECONDS = 2.0
 GRADIENT_PRESETS: dict[str, tuple[str, str]] = {
     "Turquoise -> Coral": ("#2ec4b6", "#ff6b6b"),
     "Ocean": ("#00b4d8", "#03045e"),
@@ -201,6 +204,7 @@ class PushSwapVisualizer:
         self.ops: list[str] = []
         self.current_index = 0
         self.play_job: str | None = None
+        self.run_in_progress = False
         self.value_ranks: dict[int, int] = {}
         self.sorted_values: list[int] = []
         self.settings_visible = True
@@ -708,6 +712,9 @@ class PushSwapVisualizer:
         messagebox.showerror("Build failed", error_text)
 
     def run_push_swap(self) -> None:
+        if self.run_in_progress:
+            self.status_var.set("push_swap is already running...")
+            return
         self.stop_playback()
         push_swap = Path(self.push_swap_var.get()).expanduser()
         checker = Path(self.checker_var.get()).expanduser()
@@ -734,50 +741,126 @@ class PushSwapVisualizer:
         if self.bench_var.get():
             args.append("--bench")
         args.extend(str(v) for v in values)
-        result = subprocess.run(args, capture_output=True, text=True, check=False)
-        if result.returncode != 0 and result.stderr:
-            self.status_var.set(result.stderr.strip())
-        else:
+        self.run_in_progress = True
+        self.status_var.set("Running push_swap...")
+        self.info_var.set("Run in progress...")
+        worker = threading.Thread(
+            target=self._run_push_swap_worker,
+            args=(args, checker, values, strategy_flag, self.bench_var.get()),
+            daemon=True,
+        )
+        worker.start()
+
+    def _run_push_swap_worker(
+        self,
+        args: list[str],
+        checker: Path,
+        values: list[int],
+        strategy_flag: str,
+        bench_enabled: bool,
+    ) -> None:
+        try:
+            result = subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=PUSH_SWAP_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            self.root.after(
+                0,
+                self._finish_run_failure,
+                "push_swap timed out.",
+                f"push_swap did not finish within {PUSH_SWAP_TIMEOUT_SECONDS:.1f}s.\n"
+                "Your binary may be stuck in an infinite loop or deadlocked.",
+            )
+            return
+        except OSError as exc:
+            self.root.after(0, self._finish_run_failure, "Failed to start push_swap.", str(exc))
+            return
+
+        status_text = result.stderr.strip() if result.returncode != 0 and result.stderr else ""
+        if not status_text:
             strategy_label = strategy_flag or "no strategy flag"
-            bench_label = " with --bench" if self.bench_var.get() else ""
-            self.status_var.set(f"push_swap executed with {strategy_label}{bench_label}.")
+            bench_label = " with --bench" if bench_enabled else ""
+            status_text = f"push_swap executed with {strategy_label}{bench_label}."
 
         ops = [line.strip() for line in result.stdout.splitlines() if line.strip()]
         invalid = [op for op in ops if op not in VALID_OPS]
         if invalid:
-            messagebox.showerror("Invalid output", f"Unknown operations:\n{', '.join(invalid[:10])}")
+            self.root.after(
+                0,
+                self._finish_run_failure,
+                "Invalid push_swap output.",
+                f"Unknown operations:\n{', '.join(invalid[:10])}",
+            )
             return
 
         try:
             snapshots = self._build_snapshots(values, ops)
         except ValueError as exc:
-            messagebox.showerror("Simulation error", str(exc))
+            self.root.after(0, self._finish_run_failure, "Simulation error.", str(exc))
             return
 
         check_text = "checker unavailable"
         if checker.exists():
-            checker_run = subprocess.run(
-                [str(checker), *[str(v) for v in values]],
-                input=result.stdout,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            check_text = (checker_run.stdout or checker_run.stderr).strip() or "no checker output"
+            try:
+                checker_run = subprocess.run(
+                    [str(checker), *[str(v) for v in values]],
+                    input=result.stdout,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=CHECKER_TIMEOUT_SECONDS,
+                )
+                check_text = (checker_run.stdout or checker_run.stderr).strip() or "no checker output"
+            except subprocess.TimeoutExpired:
+                check_text = f"checker timed out ({CHECKER_TIMEOUT_SECONDS:.1f}s)"
+            except OSError as exc:
+                check_text = f"checker failed: {exc}"
 
+        self.root.after(
+            0,
+            self._finish_run_success,
+            ops,
+            snapshots,
+            sorted(values),
+            check_text,
+            strategy_flag or "none",
+            "on" if bench_enabled else "off",
+            status_text,
+        )
+
+    def _finish_run_success(
+        self,
+        ops: list[str],
+        snapshots: list[Snapshot],
+        sorted_values: list[int],
+        check_text: str,
+        strategy_label: str,
+        bench_text: str,
+        status_text: str,
+    ) -> None:
+        self.run_in_progress = False
+        self.status_var.set(status_text)
         self.ops = ops
         self.snapshots = snapshots
-        self.sorted_values = sorted(values)
+        self.sorted_values = sorted_values
         self.value_ranks = {value: idx for idx, value in enumerate(self.sorted_values)}
         self.current_index = 0
         self._refresh_ops_text()
         self._render_current_state()
         self.set_settings_visible(False)
-        strategy_label = strategy_flag or "none"
-        bench_text = "on" if self.bench_var.get() else "off"
         self.info_var.set(
             f"strategy: {strategy_label} | bench: {bench_text} | ops: {len(ops)} | checker: {check_text}"
         )
+
+    def _finish_run_failure(self, status_text: str, error_text: str) -> None:
+        self.run_in_progress = False
+        self.status_var.set(status_text)
+        self.info_var.set("No run loaded.")
+        messagebox.showerror("Run failed", error_text)
 
     def _build_snapshots(self, values: list[int], ops: list[str]) -> list[Snapshot]:
         a = list(values)
