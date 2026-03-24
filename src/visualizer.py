@@ -50,6 +50,7 @@ STRATEGIES = [
 ]
 STRATEGY_LABELS = [label for label, _flag, _hint in STRATEGIES if label != "None"]
 STRATEGY_FLAGS = {label: flag for label, flag, _hint in STRATEGIES}
+STRATEGY_HINTS = {label: hint for label, _flag, hint in STRATEGIES}
 BG_APP = "#f2f4f8"
 BG_PANEL = "#ffffff"
 BG_DARK = "#101820"
@@ -309,6 +310,14 @@ class PushSwapVisualizer:
             font=("Helvetica", 9),
         )
         self.strategy_hint_label.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.strategy_detail_label = Label(
+            strategy_frame,
+            text="",
+            bg=BG_PANEL,
+            fg=FG_MUTED,
+            font=("Helvetica", 9),
+        )
+        self.strategy_detail_label.grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
         self._on_strategy_toggle()
         Checkbutton(
             paths,
@@ -585,6 +594,10 @@ class PushSwapVisualizer:
 
     def _on_strategy_change(self, selected_label: str) -> None:
         self.strategy_var.set(STRATEGY_FLAGS.get(selected_label, NO_STRATEGY))
+        self.strategy_detail_label.configure(
+            text=STRATEGY_HINTS.get(selected_label, ""),
+            fg=FG_MUTED,
+        )
         if self.strategy_enabled_var.get():
             self.strategy_hint_label.configure(
                 text=f"Current flag: {self.strategy_var.get()}",
@@ -600,6 +613,10 @@ class PushSwapVisualizer:
             self.strategy_var.set(NO_STRATEGY)
             self.strategy_hint_label.configure(
                 text="Enable this to pass a strategy flag to push_swap.",
+                fg=FG_MUTED,
+            )
+            self.strategy_detail_label.configure(
+                text="Run without a strategy flag.",
                 fg=FG_MUTED,
             )
 
