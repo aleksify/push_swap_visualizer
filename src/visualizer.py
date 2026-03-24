@@ -76,6 +76,7 @@ GRADIENT_PRESETS: dict[str, tuple[str, str]] = {
     "Lavender": ("#cdb4db", "#6d597a"),
     "Mono": ("#e9ecef", "#212529"),
 }
+PLAYBACK_MULTIPLIERS = [1, 2, 4, 8]
 
 
 @dataclass
@@ -196,6 +197,7 @@ class PushSwapVisualizer:
         self.status_var = StringVar(value="Ready.")
         self.info_var = StringVar(value="No run loaded.")
         self.speed_var = StringVar(value="20.0")
+        self.playback_multiplier_var = StringVar(value="1x")
         self.gradient_preset_var = StringVar(value="Turquoise -> Coral")
         self.gradient_start = DEFAULT_GRADIENT_START
         self.gradient_end = DEFAULT_GRADIENT_END
@@ -204,6 +206,7 @@ class PushSwapVisualizer:
         self.ops: list[str] = []
         self.current_index = 0
         self.play_job: str | None = None
+        self.play_direction = 1
         self.run_in_progress = False
         self.value_ranks: dict[int, int] = {}
         self.sorted_values: list[int] = []
@@ -557,6 +560,18 @@ class PushSwapVisualizer:
             padx=14,
             pady=8,
         ).grid(row=0, column=3, sticky="w")
+        Button(
+            playback_panel,
+            text="Rewind",
+            command=self.toggle_rewind,
+            relief="flat",
+            bg="#3d405b",
+            fg=FG_LIGHT,
+            activebackground="#2a2d43",
+            activeforeground=FG_LIGHT,
+            padx=14,
+            pady=8,
+        ).grid(row=0, column=4, padx=(8, 0), sticky="w")
         Label(playback_panel, text="Delay (ms)", bg=BG_PANEL, fg=FG_MUTED, font=("Helvetica", 11, "bold")).grid(
             row=1, column=0, sticky="w", pady=(12, 0)
         )
@@ -576,6 +591,24 @@ class PushSwapVisualizer:
         )
         delay_scale.set(20.0)
         delay_scale.grid(row=1, column=1, columnspan=3, sticky="we", pady=(8, 0))
+        speed_modes = Frame(playback_panel, bg=BG_PANEL)
+        speed_modes.grid(row=1, column=4, sticky="e", padx=(12, 0), pady=(8, 0))
+        Label(speed_modes, text="Burst", bg=BG_PANEL, fg=FG_MUTED, font=("Helvetica", 11, "bold")).pack(side=LEFT, padx=(0, 8))
+        for multiplier in PLAYBACK_MULTIPLIERS:
+            Radiobutton(
+                speed_modes,
+                text=f"{multiplier}x",
+                value=f"{multiplier}x",
+                variable=self.playback_multiplier_var,
+                bg=BG_PANEL,
+                fg=FG_TEXT,
+                activebackground=BG_PANEL,
+                activeforeground=FG_TEXT,
+                selectcolor="#e1f0f4",
+                highlightthickness=0,
+                font=("Helvetica", 10, "bold"),
+                padx=6,
+            ).pack(side=LEFT)
 
         main = Frame(self.root, padx=14, pady=14, bg=BG_APP)
         main.pack(fill=BOTH, expand=True)
@@ -965,33 +998,53 @@ class PushSwapVisualizer:
             )
 
     def step_forward(self) -> None:
-        if not self.snapshots:
-            return
-        if self.current_index < len(self.snapshots) - 1:
-            self.current_index += 1
-            self._refresh_ops_text()
-            self._render_current_state()
+        self._step_by(1)
+
+    def step_back(self) -> None:
+        self._step_by(-1)
+
+    def _get_playback_multiplier(self) -> int:
+        try:
+            return max(1, int(self.playback_multiplier_var.get().rstrip("x")))
+        except ValueError:
+            return 1
+
+    def _step_by(self, delta: int, stop_playback: bool = True) -> bool:
+        if not self.snapshots or delta == 0:
+            return False
+        if stop_playback:
+            self.stop_playback()
+        target_index = min(max(0, self.current_index + delta), len(self.snapshots) - 1)
+        if target_index == self.current_index:
+            if stop_playback:
+                self.stop_playback()
+            return False
+        self.current_index = target_index
+        self._refresh_ops_text()
+        self._render_current_state()
+        return True
+
+    def toggle_play(self) -> None:
+        if self.play_job is None or self.play_direction != 1:
+            self.stop_playback()
+            self.play_direction = 1
+            self._play_loop()
         else:
             self.stop_playback()
 
-    def step_back(self) -> None:
-        self.stop_playback()
-        if not self.snapshots:
-            return
-        if self.current_index > 0:
-            self.current_index -= 1
-            self._refresh_ops_text()
-            self._render_current_state()
-
-    def toggle_play(self) -> None:
-        if self.play_job is None:
+    def toggle_rewind(self) -> None:
+        if self.play_job is None or self.play_direction != -1:
+            self.stop_playback()
+            self.play_direction = -1
             self._play_loop()
         else:
             self.stop_playback()
 
     def _play_loop(self) -> None:
-        self.step_forward()
-        if self.current_index < len(self.snapshots) - 1:
+        moved = self._step_by(self.play_direction * self._get_playback_multiplier(), stop_playback=False)
+        at_end = self.current_index >= len(self.snapshots) - 1
+        at_start = self.current_index <= 0
+        if moved and not ((self.play_direction > 0 and at_end) or (self.play_direction < 0 and at_start)):
             # Tkinter timers use integer milliseconds, so sub-1ms values map to the
             # fastest available refresh instead of raising errors.
             delay = max(1, round(float(self.speed_var.get())))
@@ -1003,6 +1056,7 @@ class PushSwapVisualizer:
         if self.play_job is not None:
             self.root.after_cancel(self.play_job)
             self.play_job = None
+        self.play_direction = 1
 
     def close(self) -> None:
         self.stop_playback()
