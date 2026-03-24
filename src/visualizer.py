@@ -185,6 +185,7 @@ class PushSwapVisualizer:
         self.push_swap_var = StringVar(value=str(DEFAULT_PUSH_SWAP))
         self.checker_var = StringVar(value=str(DEFAULT_CHECKER))
         self.values_var = StringVar(value="2 1 3")
+        self.positive_only_var = BooleanVar(value=True)
         self.strategy_var = StringVar(value=NO_STRATEGY)
         self.strategy_enabled_var = BooleanVar(value=False)
         self.strategy_label_var = StringVar(value="Adaptive")
@@ -264,12 +265,26 @@ class PushSwapVisualizer:
         Entry(paths, textvariable=self.values_var, width=72, relief="flat", bg="#f8fafc", fg=FG_TEXT).grid(
             row=4, column=0, columnspan=2, sticky="we", pady=4, ipady=8
         )
+        Checkbutton(
+            paths,
+            text="Positive values only",
+            variable=self.positive_only_var,
+            onvalue=True,
+            offvalue=False,
+            bg=BG_PANEL,
+            fg=FG_TEXT,
+            activebackground=BG_PANEL,
+            activeforeground=FG_TEXT,
+            selectcolor="#e1f0f4",
+            highlightthickness=0,
+            font=("Helvetica", 10, "bold"),
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         Label(paths, text="Strategy Selector", bg=BG_PANEL, fg=FG_TEXT, font=("Helvetica", 14, "bold")).grid(
-            row=5, column=0, columnspan=2, sticky="w", pady=(14, 10)
+            row=6, column=0, columnspan=2, sticky="w", pady=(14, 10)
         )
         strategy_frame = Frame(paths, bg=BG_PANEL)
-        strategy_frame.grid(row=6, column=0, columnspan=2, sticky="we")
+        strategy_frame.grid(row=7, column=0, columnspan=2, sticky="we")
         Checkbutton(
             strategy_frame,
             text="Define strategy",
@@ -332,12 +347,12 @@ class PushSwapVisualizer:
             selectcolor="#e1f0f4",
             highlightthickness=0,
             font=("Helvetica", 11, "bold"),
-        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(12, 0))
         Label(paths, text="Color-Theme", bg=BG_PANEL, fg=FG_TEXT, font=("Helvetica", 14, "bold")).grid(
-            row=8, column=0, columnspan=2, sticky="w", pady=(14, 10)
+            row=9, column=0, columnspan=2, sticky="w", pady=(14, 10)
         )
         gradient_frame = Frame(paths, bg=BG_PANEL)
-        gradient_frame.grid(row=9, column=0, columnspan=2, sticky="we")
+        gradient_frame.grid(row=10, column=0, columnspan=2, sticky="we")
         Label(gradient_frame, text="Preset", bg=BG_PANEL, fg=FG_MUTED, font=("Helvetica", 10, "bold")).grid(
             row=0, column=0, sticky="w", padx=(0, 8)
         )
@@ -638,9 +653,13 @@ class PushSwapVisualizer:
         self.speed_var.set(f"{float(value):.1f}")
 
     def generate_values(self, size: int) -> None:
-        values = random.sample(range(-size * 20, size * 20), size)
+        if self.positive_only_var.get():
+            values = random.sample(range(1, (size * 40) + 1), size)
+        else:
+            values = random.sample(range(-size * 20, size * 20), size)
         self.values_var.set(" ".join(str(v) for v in values))
-        self.status_var.set(f"Generated {size} unique values.")
+        value_mode = "positive-only" if self.positive_only_var.get() else "signed"
+        self.status_var.set(f"Generated {size} unique {value_mode} values.")
 
     def shuffle_values(self) -> None:
         try:
