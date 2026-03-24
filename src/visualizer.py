@@ -198,6 +198,8 @@ class PushSwapVisualizer:
         self.play_job: str | None = None
         self.value_ranks: dict[int, int] = {}
         self.sorted_values: list[int] = []
+        self.settings_visible = True
+        self.toggle_settings_var = StringVar(value="Hide Settings")
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
@@ -210,21 +212,21 @@ class PushSwapVisualizer:
         self.root.geometry(f"{width}x{height}+20+20")
 
     def _build_ui(self) -> None:
-        header = Frame(self.root, bg=BG_APP, padx=14, pady=14)
-        header.pack(side=TOP, fill=X)
-        header.pack_propagate(False)
-        header.configure(height=250)
-        header.grid_columnconfigure(0, weight=1, minsize=920)
-        header.grid_columnconfigure(1, weight=0, minsize=430)
-        header.grid_rowconfigure(0, weight=1)
+        self.header = Frame(self.root, bg=BG_APP, padx=14, pady=14)
+        self.header.pack(side=TOP, fill=X)
+        self.header.pack_propagate(False)
+        self.header.configure(height=250)
+        self.header.grid_columnconfigure(0, weight=1, minsize=920)
+        self.header.grid_columnconfigure(1, weight=0, minsize=430)
+        self.header.grid_rowconfigure(0, weight=1)
 
-        paths = Frame(header, bg=BG_PANEL, padx=14, pady=14, highlightbackground="#d8dee8", highlightthickness=1)
+        paths = Frame(self.header, bg=BG_PANEL, padx=14, pady=14, highlightbackground="#d8dee8", highlightthickness=1)
         paths.grid(row=0, column=0, sticky="nsew")
         paths.pack_propagate(False)
         paths.configure(width=920)
 
         actions = Frame(
-            header,
+            self.header,
             bg=BG_PANEL,
             padx=14,
             pady=14,
@@ -467,64 +469,6 @@ class PushSwapVisualizer:
             padx=14,
             pady=8,
         ).grid(row=2, column=2, padx=4, pady=8, sticky="we")
-
-        Label(actions, text="Playback", bg=BG_PANEL, fg=FG_TEXT, font=("Helvetica", 14, "bold")).grid(
-            row=3, column=0, columnspan=3, sticky="w", pady=(10, 10)
-        )
-
-        Button(
-            actions,
-            text="Step -",
-            command=self.step_back,
-            relief="flat",
-            bg="#e9eef5",
-            fg=FG_TEXT,
-            padx=14,
-            pady=8,
-        ).grid(row=4, column=0, padx=4, pady=4, sticky="we")
-        Button(
-            actions,
-            text="Step +",
-            command=self.step_forward,
-            relief="flat",
-            bg="#e9eef5",
-            fg=FG_TEXT,
-            padx=14,
-            pady=8,
-        ).grid(row=4, column=1, padx=4, pady=4, sticky="we")
-        Button(
-            actions,
-            text="Play / Pause",
-            command=self.toggle_play,
-            relief="flat",
-            bg="#14213d",
-            fg=FG_LIGHT,
-            activebackground="#0b162e",
-            activeforeground=FG_LIGHT,
-            padx=14,
-            pady=8,
-        ).grid(row=4, column=2, padx=4, pady=4, sticky="we")
-
-        Label(actions, text="Delay (ms)", bg=BG_PANEL, fg=FG_MUTED, font=("Helvetica", 11, "bold")).grid(
-            row=5, column=0, columnspan=3, sticky="w", pady=(10, 0)
-        )
-
-        delay_scale = Scale(
-            actions,
-            from_=1,
-            to=1000,
-            resolution=1,
-            orient="horizontal",
-            showvalue=True,
-            command=self._on_speed_change,
-            bg=BG_PANEL,
-            fg=FG_TEXT,
-            highlightthickness=0,
-            troughcolor="#d6deeb",
-            activebackground=BG_ACCENT,
-        )
-        delay_scale.set(20.0)
-        delay_scale.grid(row=6, column=0, columnspan=3, sticky="we", padx=4)
         for col in range(3):
             actions.grid_columnconfigure(col, weight=1, minsize=128)
 
@@ -538,6 +482,18 @@ class PushSwapVisualizer:
             fg=FG_MUTED,
             font=("Helvetica", 11),
         ).pack(side=LEFT, fill=X, expand=True)
+        Button(
+            status_row,
+            textvariable=self.toggle_settings_var,
+            command=self.toggle_settings,
+            relief="flat",
+            bg="#e9eef5",
+            fg=FG_TEXT,
+            activebackground="#d8e2f0",
+            activeforeground=FG_TEXT,
+            padx=12,
+            pady=4,
+        ).pack(side=RIGHT, padx=(10, 0))
         Label(
             status_row,
             textvariable=self.info_var,
@@ -546,6 +502,78 @@ class PushSwapVisualizer:
             fg=FG_TEXT,
             font=("Helvetica", 11, "bold"),
         ).pack(side=RIGHT)
+
+        self.playback_bar = Frame(self.root, padx=14, pady=8, bg=BG_APP)
+        self.playback_bar.pack(side=TOP, fill=X)
+
+        playback_panel = Frame(
+            self.playback_bar,
+            bg=BG_PANEL,
+            padx=14,
+            pady=12,
+            highlightbackground="#d8dee8",
+            highlightthickness=1,
+        )
+        playback_panel.pack(fill=X)
+        playback_panel.grid_columnconfigure(0, weight=0)
+        playback_panel.grid_columnconfigure(1, weight=0)
+        playback_panel.grid_columnconfigure(2, weight=0)
+        playback_panel.grid_columnconfigure(3, weight=1)
+
+        Label(playback_panel, text="Playback", bg=BG_PANEL, fg=FG_TEXT, font=("Helvetica", 14, "bold")).grid(
+            row=0, column=0, sticky="w", padx=(0, 18)
+        )
+        Button(
+            playback_panel,
+            text="Step -",
+            command=self.step_back,
+            relief="flat",
+            bg="#e9eef5",
+            fg=FG_TEXT,
+            padx=14,
+            pady=8,
+        ).grid(row=0, column=1, padx=(0, 8), sticky="w")
+        Button(
+            playback_panel,
+            text="Step +",
+            command=self.step_forward,
+            relief="flat",
+            bg="#e9eef5",
+            fg=FG_TEXT,
+            padx=14,
+            pady=8,
+        ).grid(row=0, column=2, padx=(0, 8), sticky="w")
+        Button(
+            playback_panel,
+            text="Play / Pause",
+            command=self.toggle_play,
+            relief="flat",
+            bg="#14213d",
+            fg=FG_LIGHT,
+            activebackground="#0b162e",
+            activeforeground=FG_LIGHT,
+            padx=14,
+            pady=8,
+        ).grid(row=0, column=3, sticky="w")
+        Label(playback_panel, text="Delay (ms)", bg=BG_PANEL, fg=FG_MUTED, font=("Helvetica", 11, "bold")).grid(
+            row=1, column=0, sticky="w", pady=(12, 0)
+        )
+        delay_scale = Scale(
+            playback_panel,
+            from_=1,
+            to=1000,
+            resolution=1,
+            orient="horizontal",
+            showvalue=True,
+            command=self._on_speed_change,
+            bg=BG_PANEL,
+            fg=FG_TEXT,
+            highlightthickness=0,
+            troughcolor="#d6deeb",
+            activebackground=BG_ACCENT,
+        )
+        delay_scale.set(20.0)
+        delay_scale.grid(row=1, column=1, columnspan=3, sticky="we", pady=(8, 0))
 
         main = Frame(self.root, padx=14, pady=14, bg=BG_APP)
         main.pack(fill=BOTH, expand=True)
@@ -580,6 +608,20 @@ class PushSwapVisualizer:
             pady=10,
         )
         self.ops_text.pack(fill=BOTH, expand=True)
+
+    def toggle_settings(self) -> None:
+        self.set_settings_visible(not self.settings_visible)
+
+    def set_settings_visible(self, visible: bool) -> None:
+        if self.settings_visible == visible:
+            return
+        self.settings_visible = visible
+        if visible:
+            self.header.pack(side=TOP, fill=X, before=self.playback_bar)
+            self.toggle_settings_var.set("Hide Settings")
+        else:
+            self.header.pack_forget()
+            self.toggle_settings_var.set("Show Settings")
 
     def _on_speed_change(self, value: str) -> None:
         self.speed_var.set(f"{float(value):.1f}")
@@ -713,6 +755,7 @@ class PushSwapVisualizer:
         self.current_index = 0
         self._refresh_ops_text()
         self._render_current_state()
+        self.set_settings_visible(False)
         strategy_label = strategy_flag or "none"
         bench_text = "on" if self.bench_var.get() else "off"
         self.info_var.set(
