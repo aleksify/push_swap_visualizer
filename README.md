@@ -16,7 +16,7 @@ library Tkinter GUI.
 ## Run
 
 ```bash
-./push_swap-visualizer
+./visips
 ```
 
 You can still run it directly with:
