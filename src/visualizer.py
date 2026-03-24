@@ -12,6 +12,8 @@ from tkinter import (
     BOTH,
     END,
     LEFT,
+    DISABLED,
+    NORMAL,
     RIDGE,
     RIGHT,
     TOP,
@@ -46,6 +48,8 @@ STRATEGIES = [
     ("Medium", "--medium", "Force O(nsqrt(n))"),
     ("Complex", "--complex", "Force O(n log n)"),
 ]
+STRATEGY_LABELS = [label for label, _flag, _hint in STRATEGIES if label != "None"]
+STRATEGY_FLAGS = {label: flag for label, flag, _hint in STRATEGIES}
 BG_APP = "#f2f4f8"
 BG_PANEL = "#ffffff"
 BG_DARK = "#101820"
@@ -59,7 +63,6 @@ APPROX_CHAR_WIDTH_PX = 9
 DEFAULT_GRADIENT_START = "#2ec4b6"
 DEFAULT_GRADIENT_END = "#ff6b6b"
 GRADIENT_PRESETS: dict[str, tuple[str, str]] = {
-    "Custom": (DEFAULT_GRADIENT_START, DEFAULT_GRADIENT_END),
     "Turquoise -> Coral": ("#2ec4b6", "#ff6b6b"),
     "Ocean": ("#00b4d8", "#03045e"),
     "Sunset": ("#ffd166", "#ef476f"),
@@ -182,13 +185,13 @@ class PushSwapVisualizer:
         self.checker_var = StringVar(value=str(DEFAULT_CHECKER))
         self.values_var = StringVar(value="2 1 3")
         self.strategy_var = StringVar(value=NO_STRATEGY)
+        self.strategy_enabled_var = BooleanVar(value=False)
+        self.strategy_label_var = StringVar(value="Adaptive")
         self.bench_var = BooleanVar(value=False)
         self.status_var = StringVar(value="Ready.")
         self.info_var = StringVar(value="No run loaded.")
         self.speed_var = StringVar(value="20.0")
-        self.gradient_preset_var = StringVar(value="Custom")
-        self.gradient_start_var = StringVar(value=DEFAULT_GRADIENT_START)
-        self.gradient_end_var = StringVar(value=DEFAULT_GRADIENT_END)
+        self.gradient_preset_var = StringVar(value="Turquoise -> Coral")
         self.gradient_start = DEFAULT_GRADIENT_START
         self.gradient_end = DEFAULT_GRADIENT_END
 
@@ -266,42 +269,47 @@ class PushSwapVisualizer:
         )
         strategy_frame = Frame(paths, bg=BG_PANEL)
         strategy_frame.grid(row=6, column=0, columnspan=2, sticky="we")
-        for idx, (label, flag, hint) in enumerate(STRATEGIES):
-            strategy_card = Frame(
-                strategy_frame,
-                bg="#f8fafc",
-                padx=8,
-                pady=8,
-                highlightbackground="#d8dee8",
-                highlightthickness=1,
-                relief=RIDGE,
-                bd=0,
-            )
-            strategy_card.grid(row=0, column=idx, sticky="nsew", padx=(0, 8 if idx < len(STRATEGIES) - 1 else 0))
-            Radiobutton(
-                strategy_card,
-                text=label,
-                variable=self.strategy_var,
-                value=flag,
-                bg="#f8fafc",
-                fg=FG_TEXT,
-                selectcolor="#e1f0f4",
-                activebackground="#f8fafc",
-                activeforeground=FG_TEXT,
-                highlightthickness=0,
-                anchor="w",
-                font=("Helvetica", 11, "bold"),
-            ).pack(anchor="w")
-            flag_label = flag if flag != NO_STRATEGY else "(no flag)"
-            Label(
-                strategy_card,
-                text=flag_label,
-                bg="#f8fafc",
-                fg=BG_ACCENT,
-                font=("Courier", 10, "bold"),
-            ).pack(anchor="w")
-            Label(strategy_card, text=hint, bg="#f8fafc", fg=FG_MUTED, font=("Helvetica", 9)).pack(anchor="w")
-            strategy_frame.grid_columnconfigure(idx, weight=1)
+        Checkbutton(
+            strategy_frame,
+            text="Define strategy",
+            variable=self.strategy_enabled_var,
+            onvalue=True,
+            offvalue=False,
+            command=self._on_strategy_toggle,
+            bg=BG_PANEL,
+            fg=FG_TEXT,
+            activebackground=BG_PANEL,
+            activeforeground=FG_TEXT,
+            selectcolor="#e1f0f4",
+            highlightthickness=0,
+            font=("Helvetica", 11, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        self.strategy_menu = OptionMenu(
+            strategy_frame,
+            self.strategy_label_var,
+            *STRATEGY_LABELS,
+            command=self._on_strategy_change,
+        )
+        self.strategy_menu.configure(
+            width=18,
+            relief="flat",
+            bg="#f8fafc",
+            fg=FG_TEXT,
+            activebackground="#e1f0f4",
+            activeforeground=FG_TEXT,
+            highlightthickness=0,
+        )
+        self.strategy_menu["menu"].configure(bg="#f8fafc", fg=FG_TEXT, activebackground="#e1f0f4")
+        self.strategy_menu.grid(row=0, column=1, sticky="w", padx=(16, 0))
+        self.strategy_hint_label = Label(
+            strategy_frame,
+            text="Enable this to pass a strategy flag to push_swap.",
+            bg=BG_PANEL,
+            fg=FG_MUTED,
+            font=("Helvetica", 9),
+        )
+        self.strategy_hint_label.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self._on_strategy_toggle()
         Checkbutton(
             paths,
             text="Enable --bench",
@@ -316,7 +324,7 @@ class PushSwapVisualizer:
             highlightthickness=0,
             font=("Helvetica", 11, "bold"),
         ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(12, 0))
-        Label(paths, text="Gradient", bg=BG_PANEL, fg=FG_TEXT, font=("Helvetica", 14, "bold")).grid(
+        Label(paths, text="Color-Theme", bg=BG_PANEL, fg=FG_TEXT, font=("Helvetica", 14, "bold")).grid(
             row=8, column=0, columnspan=2, sticky="w", pady=(14, 10)
         )
         gradient_frame = Frame(paths, bg=BG_PANEL)
@@ -338,7 +346,7 @@ class PushSwapVisualizer:
         preset_menu.grid(row=0, column=1, sticky="w")
         Button(
             gradient_frame,
-            text="Use Preset",
+            text="Apply Theme",
             command=self.use_gradient_preset,
             bg=BG_ACCENT,
             fg=FG_LIGHT,
@@ -348,47 +356,13 @@ class PushSwapVisualizer:
             padx=12,
             pady=5,
         ).grid(row=0, column=2, sticky="w", padx=(12, 0))
-        Label(gradient_frame, text="Low", bg=BG_PANEL, fg=FG_MUTED, font=("Helvetica", 10, "bold")).grid(
-            row=1, column=0, sticky="w", padx=(0, 8), pady=(10, 0)
-        )
-        Entry(
-            gradient_frame,
-            textvariable=self.gradient_start_var,
-            width=14,
-            relief="flat",
-            bg="#f8fafc",
-            fg=FG_TEXT,
-        ).grid(row=1, column=1, sticky="w", ipady=6, pady=(10, 0))
-        Label(gradient_frame, text="High", bg=BG_PANEL, fg=FG_MUTED, font=("Helvetica", 10, "bold")).grid(
-            row=1, column=2, sticky="w", padx=(16, 8), pady=(10, 0)
-        )
-        Entry(
-            gradient_frame,
-            textvariable=self.gradient_end_var,
-            width=14,
-            relief="flat",
-            bg="#f8fafc",
-            fg=FG_TEXT,
-        ).grid(row=1, column=3, sticky="w", ipady=6, pady=(10, 0))
-        Button(
-            gradient_frame,
-            text="Apply",
-            command=self.apply_gradient,
-            bg=BG_ACCENT_ALT,
-            fg=FG_LIGHT,
-            activebackground="#20897e",
-            activeforeground=FG_LIGHT,
-            relief="flat",
-            padx=12,
-            pady=5,
-        ).grid(row=1, column=4, sticky="w", padx=(16, 0), pady=(10, 0))
         Label(
             gradient_frame,
-            text="Pick a preset or enter custom hex colors from lowest value to highest value.",
+            text="Choose a preset color theme for the stack bars.",
             bg=BG_PANEL,
             fg=FG_MUTED,
             font=("Helvetica", 9),
-        ).grid(row=2, column=0, columnspan=5, sticky="w", pady=(6, 0))
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 0))
         paths.grid_columnconfigure(1, weight=1)
 
         Label(actions, text="Quick Actions", bg=BG_PANEL, fg=FG_TEXT, font=("Helvetica", 14, "bold")).grid(
@@ -609,6 +583,26 @@ class PushSwapVisualizer:
         )
         self.ops_text.pack(fill=BOTH, expand=True)
 
+    def _on_strategy_change(self, selected_label: str) -> None:
+        self.strategy_var.set(STRATEGY_FLAGS.get(selected_label, NO_STRATEGY))
+        if self.strategy_enabled_var.get():
+            self.strategy_hint_label.configure(
+                text=f"Current flag: {self.strategy_var.get()}",
+                fg=BG_ACCENT,
+            )
+
+    def _on_strategy_toggle(self) -> None:
+        if self.strategy_enabled_var.get():
+            self.strategy_menu.configure(state=NORMAL)
+            self._on_strategy_change(self.strategy_label_var.get())
+        else:
+            self.strategy_menu.configure(state=DISABLED)
+            self.strategy_var.set(NO_STRATEGY)
+            self.strategy_hint_label.configure(
+                text="Enable this to pass a strategy flag to push_swap.",
+                fg=FG_MUTED,
+            )
+
     def toggle_settings(self) -> None:
         self.set_settings_visible(not self.settings_visible)
 
@@ -643,30 +637,17 @@ class PushSwapVisualizer:
 
     def use_gradient_preset(self) -> None:
         preset_name = self.gradient_preset_var.get()
-        if preset_name == "Custom":
-            self.status_var.set("Custom gradient selected. Enter hex values below.")
-            return
         gradient_start, gradient_end = GRADIENT_PRESETS[preset_name]
-        self.gradient_start_var.set(gradient_start)
-        self.gradient_end_var.set(gradient_end)
-        self.apply_gradient()
-
-    def apply_gradient(self) -> bool:
-        try:
-            gradient_start = normalize_hex_color(self.gradient_start_var.get())
-            gradient_end = normalize_hex_color(self.gradient_end_var.get())
-        except ValueError as exc:
-            messagebox.showerror("Invalid gradient color", str(exc))
-            return False
         self.gradient_start = gradient_start
         self.gradient_end = gradient_end
-        self.gradient_start_var.set(gradient_start)
-        self.gradient_end_var.set(gradient_end)
         if self.snapshots:
             self._render_current_state()
-            self.status_var.set("Updated gradient colors.")
+            self.status_var.set("Updated color theme.")
         else:
-            self.status_var.set("Gradient saved for the next run.")
+            self.status_var.set("Color theme saved for the next run.")
+
+    def apply_gradient(self) -> bool:
+        self.use_gradient_preset()
         return True
 
     def rebuild_push_swap(self) -> None:
