@@ -60,6 +60,7 @@ BG_ACCENT_ALT = "#2a9d8f"
 FG_TEXT = "#14213d"
 FG_MUTED = "#526071"
 FG_LIGHT = "#f8f9fb"
+FG_ERROR = "#c1121f"
 MIN_TILE_CHAR_WIDTH = 10
 APPROX_CHAR_WIDTH_PX = 9
 DEFAULT_GRADIENT_START = "#2ec4b6"
@@ -169,7 +170,11 @@ def normalize_hex_color(raw: str) -> str:
 
 def hex_to_rgb(value: str) -> tuple[int, int, int]:
     value = normalize_hex_color(value)
-    return tuple(int(value[idx:idx + 2], 16) for idx in (1, 3, 5))
+    return (
+        int(value[1:3], 16),
+        int(value[3:5], 16),
+        int(value[5:7], 16),
+    )
 
 
 def rgb_to_hex(rgb: tuple[int, int, int]) -> str:
@@ -181,9 +186,10 @@ def interpolate_color(start: str, end: str, ratio: float) -> str:
     clamped_ratio = max(0.0, min(1.0, ratio))
     start_rgb = hex_to_rgb(start)
     end_rgb = hex_to_rgb(end)
-    mixed = tuple(
-        round(start_channel + ((end_channel - start_channel) * clamped_ratio))
-        for start_channel, end_channel in zip(start_rgb, end_rgb)
+    mixed = (
+        round(start_rgb[0] + ((end_rgb[0] - start_rgb[0]) * clamped_ratio)),
+        round(start_rgb[1] + ((end_rgb[1] - start_rgb[1]) * clamped_ratio)),
+        round(start_rgb[2] + ((end_rgb[2] - start_rgb[2]) * clamped_ratio)),
     )
     return rgb_to_hex(mixed)
 
@@ -232,6 +238,10 @@ class PushSwapVisualizer:
         width = 1520
         height = max(860, screen_h - 80)
         self.root.geometry(f"{width}x{height}+20+20")
+
+    def _set_status_text(self, text: str, is_error: bool = False) -> None:
+        self.status_var.set(text)
+        self.status_label.configure(fg=FG_ERROR if is_error else FG_MUTED)
 
     def _build_ui(self) -> None:
         self.header = Frame(self.root, bg=BG_APP, padx=14, pady=14)
@@ -501,14 +511,15 @@ class PushSwapVisualizer:
 
         status_row = Frame(self.root, padx=14, pady=2, bg=BG_APP)
         status_row.pack(side=TOP, fill=X)
-        Label(
+        self.status_label = Label(
             status_row,
             textvariable=self.status_var,
             anchor="w",
             bg=BG_APP,
             fg=FG_MUTED,
             font=("Helvetica", 11),
-        ).pack(side=LEFT, fill=X, expand=True)
+        )
+        self.status_label.pack(side=LEFT, fill=X, expand=True)
         Button(
             status_row,
             textvariable=self.toggle_settings_var,
@@ -666,10 +677,11 @@ class PushSwapVisualizer:
         )
         self.ops_text.pack(fill=BOTH, expand=True)
 
-    def _on_strategy_change(self, selected_label: str) -> None:
-        self.strategy_var.set(STRATEGY_FLAGS.get(selected_label, NO_STRATEGY))
+    def _on_strategy_change(self, selected_label: str | StringVar) -> None:
+        label = selected_label.get() if isinstance(selected_label, StringVar) else selected_label
+        self.strategy_var.set(STRATEGY_FLAGS.get(label, NO_STRATEGY))
         self.strategy_detail_label.configure(
-            text=STRATEGY_HINTS.get(selected_label, ""),
+            text=STRATEGY_HINTS.get(label, ""),
             fg=FG_MUTED,
         )
         if self.strategy_enabled_var.get():
@@ -718,7 +730,7 @@ class PushSwapVisualizer:
             values = random.sample(range(-size * 20, size * 20), size)
         self.values_var.set(" ".join(str(v) for v in values))
         value_mode = "positive-only" if self.positive_only_var.get() else "signed"
-        self.status_var.set(f"Generated {size} unique {value_mode} values.")
+        self._set_status_text(f"Generated {size} unique {value_mode} values.")
 
     def shuffle_values(self) -> None:
         try:
@@ -728,7 +740,7 @@ class PushSwapVisualizer:
             return
         random.shuffle(values)
         self.values_var.set(" ".join(str(v) for v in values))
-        self.status_var.set("Shuffled current values.")
+        self._set_status_text("Shuffled current values.")
 
     def use_gradient_preset(self) -> None:
         preset_name = self.gradient_preset_var.get()
@@ -737,9 +749,9 @@ class PushSwapVisualizer:
         self.gradient_end = gradient_end
         if self.snapshots:
             self._render_current_state()
-            self.status_var.set("Updated color theme.")
+            self._set_status_text("Updated color theme.")
         else:
-            self.status_var.set("Color theme saved for the next run.")
+            self._set_status_text("Color theme saved for the next run.")
 
     def apply_gradient(self) -> bool:
         self.use_gradient_preset()
@@ -747,7 +759,7 @@ class PushSwapVisualizer:
 
     def rebuild_push_swap(self) -> None:
         self.stop_playback()
-        self.status_var.set("Running make re...")
+        self._set_status_text("Running make re...")
         self.root.update_idletasks()
         result = subprocess.run(
             ["make", "re"],
@@ -757,18 +769,18 @@ class PushSwapVisualizer:
             check=False,
         )
         if result.returncode == 0:
-            self.status_var.set("make re completed successfully.")
+            self._set_status_text("make re completed successfully.")
             return
 
         error_text = (result.stderr or result.stdout).strip()
         if not error_text:
             error_text = "make re failed with no output."
-        self.status_var.set("make re failed.")
+        self._set_status_text("make re failed.", is_error=True)
         messagebox.showerror("Build failed", error_text)
 
     def run_push_swap(self) -> None:
         if self.run_in_progress:
-            self.status_var.set("push_swap is already running...")
+            self._set_status_text("push_swap is already running...")
             return
         self.stop_playback()
         push_swap = Path(self.push_swap_var.get()).expanduser()
@@ -792,7 +804,7 @@ class PushSwapVisualizer:
             strategy_flag = selected_strategy
 
         self.run_in_progress = True
-        self.status_var.set("Running push_swap...")
+        self._set_status_text("Running push_swap...")
         self.info_var.set("Run in progress...")
         worker = threading.Thread(
             target=self._run_push_swap_worker,
@@ -803,7 +815,7 @@ class PushSwapVisualizer:
 
     def run_worst_of_100(self) -> None:
         if self.run_in_progress:
-            self.status_var.set("push_swap is already running...")
+            self._set_status_text("push_swap is already running...")
             return
         self.stop_playback()
         push_swap = Path(self.push_swap_var.get()).expanduser()
@@ -827,7 +839,7 @@ class PushSwapVisualizer:
             strategy_flag = selected_strategy
 
         self.run_in_progress = True
-        self.status_var.set("Running worst-of-100 benchmark...")
+        self._set_status_text("Running worst-of-100 benchmark...")
         self.info_var.set("Batch run in progress...")
         worker = threading.Thread(
             target=self._run_worst_of_100_worker,
@@ -882,6 +894,17 @@ class PushSwapVisualizer:
                 )
             except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
                 self.root.after(0, self._finish_run_exception, exc)
+                return
+
+            if not self._checker_is_ok(run_result.check_text):
+                self.root.after(
+                    0,
+                    self._finish_worst_of_100_failure,
+                    run_result,
+                    attempt,
+                    strategy_flag or "none",
+                    "on" if bench_enabled else "off",
+                )
                 return
 
             if best_run is None or len(run_result.ops) > len(best_run.ops):
@@ -964,6 +987,9 @@ class PushSwapVisualizer:
         except OSError as exc:
             return f"checker failed: {exc}"
 
+    def _checker_is_ok(self, check_text: str) -> bool:
+        return check_text.strip().upper() == "OK"
+
     def _finish_run_success(
         self,
         ops: list[str],
@@ -975,7 +1001,7 @@ class PushSwapVisualizer:
         status_text: str,
     ) -> None:
         self.run_in_progress = False
-        self.status_var.set(status_text)
+        self._set_status_text(status_text)
         self.ops = ops
         self.snapshots = snapshots
         self.sorted_values = sorted_values
@@ -1008,8 +1034,21 @@ class PushSwapVisualizer:
         bench_text: str,
     ) -> None:
         self._load_run_result(run_result, strategy_label, bench_text)
-        self.status_var.set(
-            f"Worst-of-100 loaded attempt {best_attempt} with {len(run_result.ops)} ops."
+        self._set_status_text(
+            f"Worst-of-100 loaded attempt {best_attempt} with {len(run_result.ops)} ops. All 100 checker runs returned OK."
+        )
+
+    def _finish_worst_of_100_failure(
+        self,
+        run_result: RunResult,
+        failed_attempt: int,
+        strategy_label: str,
+        bench_text: str,
+    ) -> None:
+        self._load_run_result(run_result, strategy_label, bench_text)
+        self._set_status_text(
+            f"FAIL on attempt {failed_attempt}/100: checker returned {run_result.check_text}.",
+            is_error=True,
         )
 
     def _finish_run_exception(self, exc: Exception) -> None:
@@ -1031,7 +1070,7 @@ class PushSwapVisualizer:
 
     def _finish_run_failure(self, status_text: str, error_text: str) -> None:
         self.run_in_progress = False
-        self.status_var.set(status_text)
+        self._set_status_text(status_text, is_error=True)
         self.info_var.set("No run loaded.")
         messagebox.showerror("Run failed", error_text)
 
