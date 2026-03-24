@@ -86,6 +86,16 @@ class Snapshot:
     op: str
 
 
+@dataclass
+class RunResult:
+    values: list[int]
+    ops: list[str]
+    snapshots: list[Snapshot]
+    sorted_values: list[int]
+    check_text: str
+    status_text: str
+
+
 def parse_values(raw: str) -> list[int]:
     raw = raw.strip()
     if not raw:
@@ -474,6 +484,18 @@ class PushSwapVisualizer:
             padx=14,
             pady=8,
         ).grid(row=2, column=2, padx=4, pady=8, sticky="we")
+        Button(
+            actions,
+            text="Worst of 100",
+            command=self.run_worst_of_100,
+            bg="#f4a261",
+            fg="#1a1a1a",
+            activebackground="#e58f4d",
+            activeforeground="#1a1a1a",
+            relief="flat",
+            padx=14,
+            pady=8,
+        ).grid(row=3, column=0, columnspan=3, padx=4, pady=(4, 0), sticky="we")
         for col in range(3):
             actions.grid_columnconfigure(col, weight=1, minsize=128)
 
@@ -768,50 +790,139 @@ class PushSwapVisualizer:
         strategy_flag = ""
         if selected_strategy and selected_strategy != NO_STRATEGY:
             strategy_flag = selected_strategy
-        args = [str(push_swap)]
-        if strategy_flag:
-            args.append(strategy_flag)
-        if self.bench_var.get():
-            args.append("--bench")
-        args.extend(str(v) for v in values)
+
         self.run_in_progress = True
         self.status_var.set("Running push_swap...")
         self.info_var.set("Run in progress...")
         worker = threading.Thread(
             target=self._run_push_swap_worker,
-            args=(args, checker, values, strategy_flag, self.bench_var.get()),
+            args=(push_swap, checker, values, strategy_flag, self.bench_var.get()),
+            daemon=True,
+        )
+        worker.start()
+
+    def run_worst_of_100(self) -> None:
+        if self.run_in_progress:
+            self.status_var.set("push_swap is already running...")
+            return
+        self.stop_playback()
+        push_swap = Path(self.push_swap_var.get()).expanduser()
+        checker = Path(self.checker_var.get()).expanduser()
+
+        if not push_swap.exists():
+            messagebox.showerror("Missing binary", f"push_swap not found:\n{push_swap}")
+            return
+
+        try:
+            seed_values = parse_values(self.values_var.get())
+        except ValueError as exc:
+            messagebox.showerror("Invalid values", str(exc))
+            return
+        if not self.apply_gradient():
+            return
+
+        selected_strategy = self.strategy_var.get().strip()
+        strategy_flag = ""
+        if selected_strategy and selected_strategy != NO_STRATEGY:
+            strategy_flag = selected_strategy
+
+        self.run_in_progress = True
+        self.status_var.set("Running worst-of-100 benchmark...")
+        self.info_var.set("Batch run in progress...")
+        worker = threading.Thread(
+            target=self._run_worst_of_100_worker,
+            args=(push_swap, checker, seed_values, strategy_flag, self.bench_var.get()),
             daemon=True,
         )
         worker.start()
 
     def _run_push_swap_worker(
         self,
-        args: list[str],
+        push_swap: Path,
         checker: Path,
         values: list[int],
         strategy_flag: str,
         bench_enabled: bool,
     ) -> None:
         try:
-            result = subprocess.run(
-                args,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=PUSH_SWAP_TIMEOUT_SECONDS,
+            run_result = self._execute_push_swap_run(
+                push_swap,
+                checker,
+                values,
+                strategy_flag,
+                bench_enabled,
             )
-        except subprocess.TimeoutExpired:
-            self.root.after(
-                0,
-                self._finish_run_failure,
-                "push_swap timed out.",
-                f"push_swap did not finish within {PUSH_SWAP_TIMEOUT_SECONDS:.1f}s.\n"
-                "Your binary may be stuck in an infinite loop or deadlocked.",
-            )
+        except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+            self.root.after(0, self._finish_run_exception, exc)
             return
-        except OSError as exc:
-            self.root.after(0, self._finish_run_failure, "Failed to start push_swap.", str(exc))
+
+        self.root.after(0, self._load_run_result, run_result, strategy_flag or "none", "on" if bench_enabled else "off")
+
+    def _run_worst_of_100_worker(
+        self,
+        push_swap: Path,
+        checker: Path,
+        seed_values: list[int],
+        strategy_flag: str,
+        bench_enabled: bool,
+    ) -> None:
+        best_run: RunResult | None = None
+        best_attempt = 1
+
+        for attempt in range(1, 101):
+            values = seed_values.copy()
+            random.shuffle(values)
+            try:
+                run_result = self._execute_push_swap_run(
+                    push_swap,
+                    checker,
+                    values,
+                    strategy_flag,
+                    bench_enabled,
+                )
+            except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                self.root.after(0, self._finish_run_exception, exc)
+                return
+
+            if best_run is None or len(run_result.ops) > len(best_run.ops):
+                best_run = run_result
+                best_attempt = attempt
+
+        if best_run is None:
+            self.root.after(0, self._finish_run_failure, "Worst-of-100 failed.", "No successful runs were collected.")
             return
+
+        self.root.after(
+            0,
+            self._finish_worst_of_100_success,
+            best_run,
+            best_attempt,
+            strategy_flag or "none",
+            "on" if bench_enabled else "off",
+        )
+
+    def _execute_push_swap_run(
+        self,
+        push_swap: Path,
+        checker: Path,
+        values: list[int],
+        strategy_flag: str,
+        bench_enabled: bool,
+    ) -> RunResult:
+        args = [str(push_swap)]
+        if strategy_flag:
+            args.append(strategy_flag)
+        if bench_enabled:
+            args.append("--bench")
+        args.extend(str(v) for v in values)
+
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=PUSH_SWAP_TIMEOUT_SECONDS,
+        )
 
         status_text = result.stderr.strip() if result.returncode != 0 and result.stderr else ""
         if not status_text:
@@ -822,48 +933,36 @@ class PushSwapVisualizer:
         ops = [line.strip() for line in result.stdout.splitlines() if line.strip()]
         invalid = [op for op in ops if op not in VALID_OPS]
         if invalid:
-            self.root.after(
-                0,
-                self._finish_run_failure,
-                "Invalid push_swap output.",
-                f"Unknown operations:\n{', '.join(invalid[:10])}",
-            )
-            return
+            raise ValueError(f"Unknown operations:\n{', '.join(invalid[:10])}")
 
-        try:
-            snapshots = self._build_snapshots(values, ops)
-        except ValueError as exc:
-            self.root.after(0, self._finish_run_failure, "Simulation error.", str(exc))
-            return
-
-        check_text = "checker unavailable"
-        if checker.exists():
-            try:
-                checker_run = subprocess.run(
-                    [str(checker), *[str(v) for v in values]],
-                    input=result.stdout,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=CHECKER_TIMEOUT_SECONDS,
-                )
-                check_text = (checker_run.stdout or checker_run.stderr).strip() or "no checker output"
-            except subprocess.TimeoutExpired:
-                check_text = f"checker timed out ({CHECKER_TIMEOUT_SECONDS:.1f}s)"
-            except OSError as exc:
-                check_text = f"checker failed: {exc}"
-
-        self.root.after(
-            0,
-            self._finish_run_success,
-            ops,
-            snapshots,
-            sorted(values),
-            check_text,
-            strategy_flag or "none",
-            "on" if bench_enabled else "off",
-            status_text,
+        snapshots = self._build_snapshots(values, ops)
+        check_text = self._run_checker(checker, values, result.stdout)
+        return RunResult(
+            values=values.copy(),
+            ops=ops,
+            snapshots=snapshots,
+            sorted_values=sorted(values),
+            check_text=check_text,
+            status_text=status_text,
         )
+
+    def _run_checker(self, checker: Path, values: list[int], output: str) -> str:
+        if not checker.exists():
+            return "checker unavailable"
+        try:
+            checker_run = subprocess.run(
+                [str(checker), *[str(v) for v in values]],
+                input=output,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=CHECKER_TIMEOUT_SECONDS,
+            )
+            return (checker_run.stdout or checker_run.stderr).strip() or "no checker output"
+        except subprocess.TimeoutExpired:
+            return f"checker timed out ({CHECKER_TIMEOUT_SECONDS:.1f}s)"
+        except OSError as exc:
+            return f"checker failed: {exc}"
 
     def _finish_run_success(
         self,
@@ -888,6 +987,47 @@ class PushSwapVisualizer:
         self.info_var.set(
             f"strategy: {strategy_label} | bench: {bench_text} | ops: {len(ops)} | checker: {check_text}"
         )
+
+    def _load_run_result(self, run_result: RunResult, strategy_label: str, bench_text: str) -> None:
+        self._finish_run_success(
+            run_result.ops,
+            run_result.snapshots,
+            run_result.sorted_values,
+            run_result.check_text,
+            strategy_label,
+            bench_text,
+            run_result.status_text,
+        )
+        self.values_var.set(" ".join(str(value) for value in run_result.values))
+
+    def _finish_worst_of_100_success(
+        self,
+        run_result: RunResult,
+        best_attempt: int,
+        strategy_label: str,
+        bench_text: str,
+    ) -> None:
+        self._load_run_result(run_result, strategy_label, bench_text)
+        self.status_var.set(
+            f"Worst-of-100 loaded attempt {best_attempt} with {len(run_result.ops)} ops."
+        )
+
+    def _finish_run_exception(self, exc: Exception) -> None:
+        if isinstance(exc, subprocess.TimeoutExpired):
+            self._finish_run_failure(
+                "push_swap timed out.",
+                f"push_swap did not finish within {PUSH_SWAP_TIMEOUT_SECONDS:.1f}s.\n"
+                "Your binary may be stuck in an infinite loop or deadlocked.",
+            )
+            return
+        if isinstance(exc, ValueError):
+            error_text = str(exc)
+            if error_text.startswith("Unknown operations:"):
+                self._finish_run_failure("Invalid push_swap output.", error_text)
+                return
+            self._finish_run_failure("Simulation error.", error_text)
+            return
+        self._finish_run_failure("Failed to start push_swap.", str(exc))
 
     def _finish_run_failure(self, status_text: str, error_text: str) -> None:
         self.run_in_progress = False
