@@ -981,7 +981,18 @@ class PushSwapVisualizer:
                 check=False,
                 timeout=CHECKER_TIMEOUT_SECONDS,
             )
-            return (checker_run.stdout or checker_run.stderr).strip() or "no checker output"
+            lines: list[str] = []
+            for stream in (checker_run.stdout, checker_run.stderr):
+                lines.extend(line.strip() for line in stream.splitlines() if line.strip())
+            if len(lines) != 1:
+                raise ValueError(
+                    "Checker must output exactly one non-empty line: OK or KO."
+                )
+            if lines[0].upper() not in {"OK", "KO"}:
+                raise ValueError(
+                    f"Checker returned invalid output: {lines[0]!r}. Expected OK or KO."
+                )
+            return lines[0]
         except subprocess.TimeoutExpired:
             return f"checker timed out ({CHECKER_TIMEOUT_SECONDS:.1f}s)"
         except OSError as exc:
