@@ -107,6 +107,44 @@ def parse_values(raw: str) -> list[int]:
     return values
 
 
+def compute_disorder_percent(values: list[int]) -> float:
+    mistakes = 0
+    total_pairs = 0
+    for i, left in enumerate(values[:-1]):
+        for right in values[i + 1 :]:
+            total_pairs += 1
+            if left > right:
+                mistakes += 1
+    if total_pairs == 0:
+        return 0.0
+    return (mistakes * 100.0) / total_pairs
+
+
+def build_values_for_max_disorder(source_values: list[int], max_disorder_percent: float) -> tuple[list[int], float]:
+    values = sorted(source_values)
+    size = len(values)
+    if size < 2:
+        return values, 0.0
+
+    total_pairs = size * (size - 1) // 2
+    max_inversions = int((max_disorder_percent * total_pairs) / 100.0)
+    if max_inversions <= 0:
+        return values, 0.0
+
+    lower_target = max(1, int(max_inversions * 0.7))
+    target_inversions = random.randint(lower_target, max_inversions)
+
+    ranks: list[int] = []
+    remaining = target_inversions
+    for rank in range(size - 1, -1, -1):
+        shift = min(remaining, len(ranks))
+        ranks.insert(shift, rank)
+        remaining -= shift
+
+    reordered = [values[index] for index in ranks]
+    return reordered, compute_disorder_percent(reordered)
+
+
 def op_swap(stack: list[int]) -> None:
     if len(stack) >= 2:
         stack[0], stack[1] = stack[1], stack[0]
@@ -472,6 +510,30 @@ class PushSwapVisualizer:
         )
         Button(
             actions,
+            text="Disorder <20%",
+            command=lambda: self.generate_disorder_values(20.0),
+            bg=BG_ACCENT_ALT,
+            fg=FG_LIGHT,
+            activebackground="#20897e",
+            activeforeground=FG_LIGHT,
+            relief="flat",
+            padx=14,
+            pady=8,
+        ).grid(row=2, column=1, padx=4, pady=8, sticky="we")
+        Button(
+            actions,
+            text="Disorder <50%",
+            command=lambda: self.generate_disorder_values(50.0),
+            bg=BG_ACCENT_ALT,
+            fg=FG_LIGHT,
+            activebackground="#20897e",
+            activeforeground=FG_LIGHT,
+            relief="flat",
+            padx=14,
+            pady=8,
+        ).grid(row=2, column=2, padx=4, pady=8, sticky="we")
+        Button(
+            actions,
             text="make re",
             command=self.rebuild_push_swap,
             bg="#e76f51",
@@ -481,7 +543,7 @@ class PushSwapVisualizer:
             relief="flat",
             padx=14,
             pady=8,
-        ).grid(row=2, column=1, padx=4, pady=8, sticky="we")
+        ).grid(row=3, column=0, padx=4, pady=8, sticky="we")
         Button(
             actions,
             text="Run push_swap",
@@ -493,7 +555,7 @@ class PushSwapVisualizer:
             relief="flat",
             padx=14,
             pady=8,
-        ).grid(row=2, column=2, padx=4, pady=8, sticky="we")
+        ).grid(row=3, column=1, padx=4, pady=8, sticky="we")
         Button(
             actions,
             text="Worst of 100",
@@ -505,7 +567,7 @@ class PushSwapVisualizer:
             relief="flat",
             padx=14,
             pady=8,
-        ).grid(row=3, column=0, columnspan=3, padx=4, pady=(4, 0), sticky="we")
+        ).grid(row=3, column=2, padx=4, pady=8, sticky="we")
         for col in range(3):
             actions.grid_columnconfigure(col, weight=1, minsize=128)
 
@@ -741,6 +803,21 @@ class PushSwapVisualizer:
         random.shuffle(values)
         self.values_var.set(" ".join(str(v) for v in values))
         self._set_status_text("Shuffled current values.")
+
+    def generate_disorder_values(self, max_disorder_percent: float) -> None:
+        try:
+            values = parse_values(self.values_var.get())
+        except ValueError:
+            messagebox.showerror(
+                "Invalid values",
+                "Enter a valid unique value list first so the visualizer can preserve its size.",
+            )
+            return
+        generated, actual_disorder = build_values_for_max_disorder(values, max_disorder_percent)
+        self.values_var.set(" ".join(str(v) for v in generated))
+        self._set_status_text(
+            f"Generated {len(generated)} values at {actual_disorder:.2f}% disorder (< {max_disorder_percent:.0f}%)."
+        )
 
     def use_gradient_preset(self) -> None:
         preset_name = self.gradient_preset_var.get()
