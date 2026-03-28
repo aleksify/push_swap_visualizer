@@ -69,6 +69,7 @@ PUSH_SWAP_TIMEOUT_SECONDS = 3.0
 CHECKER_TIMEOUT_SECONDS = 2.0
 GRADIENT_PRESETS: dict[str, tuple[str, str]] = {
     "Turquoise -> Coral": ("#2ec4b6", "#ff6b6b"),
+    "trainvent": ("#2ec4b6", "#6a040f"),
     "Ocean": ("#00b4d8", "#03045e"),
     "Sunset": ("#ffd166", "#ef476f"),
     "Fire": ("#ffe066", "#d00000"),
