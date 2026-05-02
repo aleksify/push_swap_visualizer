@@ -523,20 +523,6 @@ class PushSwapVisualizer:
         ).grid(row=1, column=2, padx=4, pady=4, sticky="we")
         Button(
             actions,
-            text="Shuffle",
-            command=self.shuffle_values,
-            bg=BG_ACCENT_ALT,
-            fg=FG_LIGHT,
-            activebackground="#20897e",
-            activeforeground=FG_LIGHT,
-            relief="flat",
-            padx=14,
-            pady=8,
-        ).grid(
-            row=2, column=0, padx=4, pady=8, sticky="we"
-        )
-        Button(
-            actions,
             text="Disorder <20%",
             command=lambda: self.generate_disorder_values(20.0),
             bg=BG_ACCENT_ALT,
@@ -546,7 +532,7 @@ class PushSwapVisualizer:
             relief="flat",
             padx=14,
             pady=8,
-        ).grid(row=2, column=1, padx=4, pady=8, sticky="we")
+        ).grid(row=2, column=0, padx=4, pady=8, sticky="we")
         Button(
             actions,
             text="Disorder <50%",
@@ -558,7 +544,20 @@ class PushSwapVisualizer:
             relief="flat",
             padx=14,
             pady=8,
+        ).grid(row=2, column=1, padx=4, pady=8, sticky="we")
+        Button(
+            actions,
+            text="Disorder 70-100%",
+            command=lambda: self.generate_disorder_values(100.0),
+            bg=BG_ACCENT_ALT,
+            fg=FG_LIGHT,
+            activebackground="#20897e",
+            activeforeground=FG_LIGHT,
+            relief="flat",
+            padx=14,
+            pady=8,
         ).grid(row=2, column=2, padx=4, pady=8, sticky="we")
+
         Button(
             actions,
             text="make re",
