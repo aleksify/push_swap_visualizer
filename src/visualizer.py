@@ -121,56 +121,6 @@ def compute_disorder_percent(values: list[int]) -> float:
     return (mistakes * 100.0) / total_pairs
 
 
-def build_values_for_max_disorder(source_values: list[int], max_disorder_percent: float) -> tuple[list[int], float]:
-    size = len(source_values)
-    if size < 2:
-        return sorted(source_values), 0.0
-
-    total_pairs = size * (size - 1) // 2
-    
-    # Calculate target inversions exactly like the original code
-    max_inversions = int((max_disorder_percent * total_pairs) / 100.0)
-    
-    # Sanity clamp to ensure we don't exceed mathematical boundaries
-    max_inversions = max(0, min(max_inversions, total_pairs)) 
-    
-    if max_inversions <= 0:
-        return sorted(source_values), 0.0
-
-    lower_target = max(1, int(max_inversions * 0.7))
-    target_inversions = random.randint(lower_target, max_inversions)
-
-    # --- The Natural Random Walk ---
-    
-    # If targeting lower disorder, start perfectly sorted and increase disorder
-    if target_inversions <= total_pairs // 2:
-        reordered = sorted(source_values)
-        current_inversions = 0
-        
-        while current_inversions < target_inversions:
-            i = random.randint(0, size - 2)
-            # Swap only if it INCREASES inversions (they are currently in ascending order)
-            if reordered[i] < reordered[i+1]:
-                reordered[i], reordered[i+1] = reordered[i+1], reordered[i]
-                current_inversions += 1
-                
-    # If targeting high disorder, start perfectly reversed and decrease disorder
-    else:
-        reordered = sorted(source_values, reverse=True)
-        # Note: If there are duplicate numbers in the array, starting reverse 
-        # doesn't technically guarantee `total_pairs` inversions. 
-        # But assuming mostly unique values, this logic holds.
-        current_inversions = total_pairs 
-        
-        while current_inversions > target_inversions:
-            i = random.randint(0, size - 2)
-            # Swap only if it DECREASES inversions (they are currently in descending order)
-            if reordered[i] > reordered[i+1]:
-                reordered[i], reordered[i+1] = reordered[i+1], reordered[i]
-                current_inversions -= 1
-
-    # Assumes compute_disorder_percent is defined elsewhere in your program
-    return reordered, compute_disorder_percent(reordered)
 
 def op_swap(stack: list[int]) -> None:
     if len(stack) >= 2:
@@ -524,7 +474,7 @@ class PushSwapVisualizer:
         Button(
             actions,
             text="Disorder <20%",
-            command=lambda: self.generate_disorder_values(20.0),
+            command=lambda: self.generate_disorder_values(0.14, 0.20),
             bg=BG_ACCENT_ALT,
             fg=FG_LIGHT,
             activebackground="#20897e",
@@ -536,7 +486,7 @@ class PushSwapVisualizer:
         Button(
             actions,
             text="Disorder <50%",
-            command=lambda: self.generate_disorder_values(50.0),
+            command=lambda: self.generate_disorder_values(0.35, 0.50),
             bg=BG_ACCENT_ALT,
             fg=FG_LIGHT,
             activebackground="#20897e",
@@ -548,7 +498,7 @@ class PushSwapVisualizer:
         Button(
             actions,
             text="Disorder 70-100%",
-            command=lambda: self.generate_disorder_values(100.0),
+            command=lambda: self.generate_disorder_values(0.70, 1.00),
             bg=BG_ACCENT_ALT,
             fg=FG_LIGHT,
             activebackground="#20897e",
@@ -830,7 +780,7 @@ class PushSwapVisualizer:
         self.values_var.set(" ".join(str(v) for v in values))
         self._set_status_text("Shuffled current values.")
 
-    def generate_disorder_values(self, max_disorder_percent: float) -> None:
+    def generate_disorder_values(self, lo: float, hi: float) -> None:
         try:
             values = parse_values(self.values_var.get())
         except ValueError:
@@ -839,10 +789,22 @@ class PushSwapVisualizer:
                 "Enter a valid unique value list first so the visualizer can preserve its size.",
             )
             return
-        generated, actual_disorder = build_values_for_max_disorder(values, max_disorder_percent)
+        n = len(values)
+        script = SCRIPT_DIR.parent / "pushswap-disorder" / "bench_disorder.py"
+        result = subprocess.run(
+            [sys.executable, str(script), "--gen", "-d", f"{lo}-{hi}", "-n", str(n)],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            messagebox.showerror("Generation failed", result.stderr.strip())
+            return
+        indices = list(map(int, result.stdout.strip().split()))
+        sorted_vals = sorted(values)
+        generated = [sorted_vals[i] for i in indices]
+        actual_disorder = compute_disorder_percent(generated)
         self.values_var.set(" ".join(str(v) for v in generated))
         self._set_status_text(
-            f"Generated {len(generated)} values at {actual_disorder:.2f}% disorder (< {max_disorder_percent:.0f}%)."
+            f"Generated {n} values at {actual_disorder:.2f}% disorder ({lo*100:.0f}-{hi*100:.0f}%)."
         )
 
     def use_gradient_preset(self) -> None:

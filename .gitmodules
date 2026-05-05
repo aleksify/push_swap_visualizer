@@ -1,0 +1,3 @@
+[submodule "pushswap-disorder"]
+	path = pushswap-disorder
+	url = git@github.com:aleksify/pushswap-disorder.git
